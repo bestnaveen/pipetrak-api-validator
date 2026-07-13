@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PipeTrakIt API Validator</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --navy:#0D2B55;--navy-light:#12376B;--teal:#1A7A8A;--teal-dark:#14616E;
+    --bg:#F3F6FA;--card:#FFFFFF;--border:#D8DEE8;--border-focus:#1A7A8A;
+    --text:#1A2332;--text-sec:#5A6B80;--text-muted:#8898AA;
+    --green:#1E7E34;--green-bg:#E8F5E9;--red:#B71C1C;--red-bg:#FFEBEE;
+    --orange:#E65100;--orange-bg:#FFF3E0;--row-alt:#F7F9FC;
+    --radius:6px;--shadow:0 1px 3px rgba(13,43,85,.08);
+  }
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh}
+
+  /* ── Header ── */
+  .header{background:var(--navy);padding:18px 28px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(13,43,85,.18)}
+  .header h1{color:#fff;font-size:18px;font-weight:600;letter-spacing:.3px}
+  .header .badge{background:var(--teal);color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;letter-spacing:.5px;text-transform:uppercase}
+
+  /* ── Layout ── */
+  .container{max-width:1240px;margin:0 auto;padding:24px 20px}
+
+  /* ── Cards ── */
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
+  .card-head{background:var(--navy);color:#fff;padding:10px 18px;font-size:13px;font-weight:600;letter-spacing:.4px;display:flex;align-items:center;gap:8px}
+  .card-head .step{background:var(--teal);font-size:10px;padding:2px 8px;border-radius:8px;font-weight:700}
+  .card-body{padding:18px}
+
+  /* ── Form controls ── */
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .form-group{display:flex;flex-direction:column;gap:4px}
+  .form-group.full{grid-column:1/-1}
+  label{font-size:12px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:.5px}
+  select,input[type=text],input[type=password]{
+    padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;
+    font-family:inherit;color:var(--text);background:#fff;transition:border .15s}
+  select:focus,input:focus{outline:none;border-color:var(--border-focus);box-shadow:0 0 0 2px rgba(26,122,138,.12)}
+  select{cursor:pointer}
+
+  /* ── Buttons ── */
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 22px;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,transform .1s;font-family:inherit}
+  .btn:active{transform:scale(.97)}
+  .btn-primary{background:var(--teal);color:#fff}
+  .btn-primary:hover{background:var(--teal-dark)}
+  .btn-primary:disabled{background:var(--text-muted);cursor:not-allowed;transform:none}
+  .btn-outline{background:transparent;color:var(--teal);border:1.5px solid var(--teal)}
+  .btn-outline:hover{background:rgba(26,122,138,.06)}
+  .btn-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+
+  /* ── Radio pills ── */
+  .pill-group{display:flex;gap:0;border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;width:fit-content}
+  .pill-group input{display:none}
+  .pill-group label.pill{
+    padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;background:#fff;
+    color:var(--text-sec);border-right:1px solid var(--border);transition:all .15s;user-select:none}
+  .pill-group label.pill:last-of-type{border-right:none}
+  .pill-group input:checked+label.pill{background:var(--navy);color:#fff}
+
+  /* ── Log console ── */
+  .log{background:#0C1B2E;color:#B8D0E8;font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size:12px;padding:14px 16px;border-radius:var(--radius);max-height:360px;overflow-y:auto;
+    line-height:1.7;white-space:pre-wrap;word-break:break-all}
+  .log .ok{color:#4CAF50}.log .err{color:#EF5350}.log .warn{color:#FFA726}.log .info{color:#42A5F5}
+  .log .dim{color:#5A7A9A}
+
+  /* ── Tables ── */
+  .tbl-wrap{overflow-x:auto;margin-top:12px}
+  table.res{width:100%;border-collapse:collapse;font-size:12px}
+  table.res th{background:var(--navy);color:#fff;padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0}
+  table.res td{padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+  table.res tr:nth-child(even) td{background:var(--row-alt)}
+  table.res tr:hover td{background:#EDF2F9}
+  .st-ok{color:var(--green);font-weight:700}.st-fail{color:var(--red);font-weight:700}.st-err{color:var(--orange);font-weight:700}
+
+  /* ── Stat pills ── */
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{padding:10px 18px;border-radius:var(--radius);color:#fff;font-size:13px;font-weight:600;min-width:130px;text-align:center}
+  .stat small{display:block;font-size:10px;font-weight:400;opacity:.85;margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px}
+  .stat-navy{background:var(--navy)}.stat-teal{background:var(--teal)}.stat-green{background:var(--green)}.stat-red{background:var(--red)}
+
+  /* ── Misc ── */
+  .base-url{font-family:monospace;font-size:12px;color:var(--teal);background:rgba(26,122,138,.07);padding:5px 10px;border-radius:4px;display:inline-block;margin-top:6px;word-break:break-all}
+  .hidden{display:none!important}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .progress-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px}
+  .progress-bar .fill{height:100%;background:var(--teal);transition:width .3s;width:0%}
+  .mt{margin-top:14px}
+
+  @media(max-width:640px){
+    .form-grid{grid-template-columns:1fr}
+    .stats{flex-direction:column}
+    .header h1{font-size:15px}
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PipeTrakIt API Validator</h1>
+  <span class="badge">v2.0</span>
+</div>
+
+<div class="container">
+
+  <!-- ═══ CONFIG & LOGIN ═══ -->
+  <div class="card" id="loginCard">
+    <div class="card-head"><span class="step">1</span> Configuration & Login</div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>API Mode</label>
+          <select id="apiMode">
+            <option value="OLD">OLD</option>
+            <option value="CORE">CORE</option>
+            <option value="PTCORE">PTCORE</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Environment</label>
+          <select id="env">
+            <option value="QA">QA</option>
+            <option value="UAT">UAT</option>
+            <option value="PROD">PROD</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="user" placeholder="Enter username" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="pass" placeholder="Enter password" autocomplete="current-password">
+        </div>
+      </div>
+      <div id="baseUrlDisplay" class="mt"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnLogin" onclick="doLogin()">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ API CHOICE ═══ -->
+  <div class="card hidden" id="choiceCard">
+    <div class="card-head"><span class="step">2</span> Select API to Validate</div>
+    <div class="card-body">
+      <div class="pill-group">
+        <input type="radio" name="apiCall" id="rMeta" value="meta" checked>
+        <label class="pill" for="rMeta">Metadata (Form Configuration)</label>
+        <input type="radio" name="apiCall" id="rMaster" value="master">
+        <label class="pill" for="rMaster">Master Data</label>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnRun" onclick="runValidation()">Run Validation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ RESULTS ═══ -->
+  <div id="results"></div>
+
+  <!-- ═══ LOG ═══ -->
+  <div class="card hidden" id="logCard">
+    <div class="card-head">Console Log</div>
+    <div class="card-body" style="padding:0">
+      <div class="log" id="logBox"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const URLS = {
+  QA:   { OLD:"https://qamobility.pipetrakit.com",  CORE:"https://qamobilitycore.pipetrakit.com",  PTCORE:"https://qamobilityptcore.pipetrakit.com" },
+  UAT:  { OLD:"https://uatmobility.pipetrakit.com", CORE:"https://uatmobilitycore.pipetrakit.com", PTCORE:"https://uatmobilityptcore.pipetrakit.com" },
+  PROD: { OLD:"https://mobility.pipetrakit.com",     CORE:"https://mobilitycore.pipetrakit.com",     PTCORE:"https://mobilityptcore.pipetrakit.com" }
+};
+
+let BASE = "", TOKEN = "";
+
+// ── Helpers ──
+function $(id){ return document.getElementById(id) }
+function show(id){ $(id).classList.remove("hidden") }
+function hide(id){ $(id).classList.add("hidden") }
+
+const logBox = $("logBox");
+function log(msg, cls=""){
+  const s = document.createElement("span");
+  s.className = cls;
+  s.textContent = msg + "\n";
+  logBox.appendChild(s);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+function clearLog(){ logBox.innerHTML = "" }
+
+function getBase(){
+  const mode = $("apiMode").value;
+  const env  = $("env").value;
+  return URLS[env][mode];
+}
+
+// Update base URL display on change
+$("apiMode").addEventListener("change", showBaseUrl);
+$("env").addEventListener("change", showBaseUrl);
+function showBaseUrl(){
+  $("baseUrlDisplay").innerHTML = '<span class="base-url">' + getBase() + '</span>';
+}
+showBaseUrl();
+
+async function post(url, payload){
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Accept":"*/*", "Content-Type":"application/json-patch+json" },
+    body: JSON.stringify(payload)
+  });
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+function statusHtml(s){
+  if(s==="SUCCESS") return '<span class="st-ok">SUCCESS</span>';
+  if(s==="FAILED")  return '<span class="st-fail">FAILED</span>';
+  return '<span class="st-err">'+s+'</span>';
+}
+
+function downloadJSON(obj, filename){
+  const blob = new Blob([JSON.stringify(obj, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function setBtn(btn, loading, text){
+  btn.disabled = loading;
+  btn.innerHTML = loading ? '<span class="spinner"></span> ' + text : text;
+}
+
+// ══════════════════════════════════════
+// LOGIN
+// ══════════════════════════════════════
+async function doLogin(){
+  const btn = $("btnLogin");
+  setBtn(btn, true, "Logging in…");
+  clearLog(); show("logCard"); hide("choiceCard"); $("results").innerHTML = "";
+
+  BASE = getBase();
+  const u = $("user").value.trim();
+  const p = $("pass").value;
+
+  if(!u || !p){ log("Username and Password required.", "err"); setBtn(btn, false, "Login"); return; }
+
+  log("Base URL: " + BASE, "info");
+  log("Authenticating user: " + u + " …");
+
+  try {
+    const auth = await post(BASE + "/api/User/authenticateUser", {
+      UserName: u, Password: p, DeviceID: "device", IsFirstLogin: true, IsNestedMenu: true
+    });
+
+    const st = auth.Status || {};
+    const mc = st.MessageCode;
+    const mv = (st.MessageList || [{}])[0].MessageValue || "";
+
+    if(mc !== 1200){
+      log("LOGIN FAILED: " + mv, "err");
+      setBtn(btn, false, "Login");
+      return;
+    }
+    if(auth.Data == null){
+      log("LOGIN FAILED: Data is null, MessageCode: " + mc, "err");
+      setBtn(btn, false, "Login");
+      return;
+    }
+
+    TOKEN = auth.Data.UserToken;
+    log("Login Successful  ✓", "ok");
+    log("UserToken: " + TOKEN, "dim");
+    show("choiceCard");
+  } catch(e){
+    log("LOGIN ERROR: " + e.message, "err");
+  }
+  setBtn(btn, false, "Login");
+}
+
+// ══════════════════════════════════════
+// RUN VALIDATION
+// ══════════════════════════════════════
+async function runValidation(){
+  const btn = $("btnRun");
+  const choice = document.querySelector('input[name=apiCall]:checked').value;
+  $("results").innerHTML = "";
+
+  if(choice === "meta") await runMetadata(btn);
+  else await runMasterData(btn);
+}
+
+// ── OPTION 1: Metadata ──
+async function runMetadata(btn){
+  setBtn(btn, true, "Fetching Metadata…");
+  log("\n═══ Metadata (Form Configuration) ═══", "info");
+
+  try {
+    const meta = await post(BASE + "/api/ImportData/getMetaData", { UserToken: TOKEN });
+    const st = meta.Status || {};
+    const mc = st.MessageCode;
+    const mv = (st.MessageList || [{}])[0].MessageValue || "";
+
+    if(mc !== 1200){
+      log("META DATA API FAILED: " + mv, "err");
+      setBtn(btn, false, "Run Validation"); return;
+    }
+
+    log("getMetaData API: SUCCESS  ✓", "ok");
+
+    const d = meta.Data || {};
+    const defs = (d.FormDefinitions || []).filter(x => {
+      const fid = String(x.FormId || "99999");
+      return /^\d+$/.test(fid) && parseInt(fid) < 9000;
+    });
+    const fd = defs.length;
+    const fm = (d.FormModel || []).length;
+    const cat = (d.Catalogs || []).length;
+    const match = fd === fm && fm === cat;
+
+    log("FormDefinitions (<9000): " + fd);
+    log("FormModel: " + fm);
+    log("Catalogs: " + cat);
+    log(match ? "META DATA API RECORDS LOOK GOOD  ✓" : "META DATA RECORD COUNT MISMATCH  ✗", match ? "ok" : "err");
+
+    // Build result card
+    let html = '<div class="card"><div class="card-head"><span class="step">R</span> Metadata Report</div><div class="card-body">';
+    html += '<div class="stats">';
+    html += '<div class="stat stat-navy"><small>FormDefinitions (&lt;9000)</small>' + fd + '</div>';
+    html += '<div class="stat stat-teal"><small>FormModel</small>' + fm + '</div>';
+    html += '<div class="stat stat-teal"><small>Catalogs</small>' + cat + '</div>';
+    html += '<div class="stat ' + (match ? 'stat-green' : 'stat-red') + '"><small>Status</small>' + (match ? 'MATCH' : 'MISMATCH') + '</div>';
+    html += '</div>';
+    html += '<div class="btn-row"><button class="btn btn-outline" onclick=\'downloadJSON(__metaPayload,"getMetaData.json")\'>Download getMetaData.json</button></div>';
+    html += '</div></div>';
+    $("results").innerHTML = html;
+
+    window.__metaPayload = meta;
+
+  } catch(e){
+    log("ERROR: " + e.message, "err");
+  }
+  setBtn(btn, false, "Run Validation");
+}
+
+// ── OPTION 2: Master Data ──
+async function runMasterData(btn){
+  setBtn(btn, true, "Running Master Data…");
+
+  // ── STEP 2: getMasterApiList ──
+  log("\n═══════════════════════════════════════════", "info");
+  log("STEP 2: Get MasterApiList", "info");
+  log("═══════════════════════════════════════════", "info");
+
+  let apiList;
+  try {
+    const mlist = await post(BASE + "/api/ImportData/getMasterApiList", { UserToken: TOKEN });
+    const st = mlist.Status || {};
+    const mc = st.MessageCode;
+    const mv = (st.MessageList || [{}])[0].MessageValue || "";
+    if(mc !== 1200){
+      log("MasterApiList FAILED: " + mv, "err");
+      setBtn(btn, false, "Run Validation"); return;
+    }
+    apiList = mlist.Data || [];
+  } catch(e){
+    log("MasterApiList ERROR: " + e.message, "err");
+    setBtn(btn, false, "Run Validation"); return;
+  }
+
+  const batchTrue  = apiList.filter(m => m.BatchProcessing);
+  const batchFalse = apiList.filter(m => !m.BatchProcessing);
+  log("[SUCCESS] Retrieved " + apiList.length + " model(s)", "ok");
+  log("  Batch=true: " + batchTrue.length + "  |  Batch=false: " + batchFalse.length);
+  apiList.forEach(m => log("  " + (m.ModelName||"").padEnd(35) + String(m.BatchProcessing).padEnd(17) + (m.Module||""), "dim"));
+
+  // ── STEP 3: getMasterData (non-batch) ──
+  log("\n═══════════════════════════════════════════", "info");
+  log("STEP 3: Fetch MasterData (BatchProcessing = false)", "info");
+  log("═══════════════════════════════════════════", "info");
+
+  const nonBatch = apiList.filter(m => !m.BatchProcessing);
+  const s3Rows = [];
+
+  if(!nonBatch.length){
+    log("[INFO] No models with BatchProcessing = false found.", "warn");
+  } else {
+    log("[INFO] " + nonBatch.length + " model(s) to fetch.\n");
+    for(let i = 0; i < nonBatch.length; i++){
+      const mn  = nonBatch[i].ModelName || "";
+      const mod = nonBatch[i].Module || "";
+      log("  [" + (i+1) + "/" + nonBatch.length + "] Fetching: " + mn + " (Module: " + mod + ")");
+      setBtn(btn, true, "Step 3: " + (i+1) + "/" + nonBatch.length);
+      try {
+        const d = await post(BASE + "/api/ImportData/getMasterData", { UserToken: TOKEN, modelName: mn });
+        const code = (d.Status||{}).MessageCode;
+        if(code !== 1200){
+          const msgs = (d.Status||{}).MessageList || [];
+          const msg = msgs.length ? msgs[0].MessageValue || "Unknown error" : "Unknown error";
+          log("    [FAILED] Code " + code + ": " + msg, "err");
+          s3Rows.push({model:mn, module:mod, status:"FAILED", count:"N/A", message:msg});
+          continue;
+        }
+        const recs = (d.Data || {})[mn] || [];
+        const cnt = Array.isArray(recs) ? recs.length : "N/A";
+        log("    [SUCCESS] Records: " + cnt, "ok");
+        s3Rows.push({model:mn, module:mod, status:"SUCCESS", count:cnt, message:""});
+      } catch(e){
+        log("    [ERROR] " + e.message, "err");
+        s3Rows.push({model:mn, module:mod, status:"ERROR", count:"N/A", message:e.message});
+      }
+    }
+  }
+
+  // ── STEP 4: getMasterBatchData (batch, page 1) ──
+  log("\n═══════════════════════════════════════════════════════════════════", "info");
+  log("STEP 4: Fetch MasterBatchData page 1 (BatchProcessing = true)", "info");
+  log("═══════════════════════════════════════════════════════════════════", "info");
+
+  const batchModels = apiList.filter(m => m.BatchProcessing);
+  const s4Rows = [];
+
+  if(!batchModels.length){
+    log("[INFO] No models with BatchProcessing = true found.", "warn");
+  } else {
+    log("[INFO] " + batchModels.length + " model(s) to test (page 1 only).\n");
+    for(let i = 0; i < batchModels.length; i++){
+      const mn  = batchModels[i].ModelName || "";
+      const mod = batchModels[i].Module || "";
+      setBtn(btn, true, "Step 4: " + (i+1) + "/" + batchModels.length);
+      try {
+        const d = await post(BASE + "/api/ImportData/getMasterBatchData", {
+          UserToken: TOKEN, modelName: mn, pageNo: "1", pageSize: "10"
+        });
+        const code = (d.Status||{}).MessageCode;
+        if(code !== 1200){
+          const msgs = (d.Status||{}).MessageList || [];
+          const msg = msgs.length ? msgs[0].MessageValue || "Unknown error" : "Unknown error";
+          log("  " + mn.padEnd(30) + " FAILED", "err");
+          s4Rows.push({model:mn,module:mod,status:"FAILED",current_page:"N/A",no_of_pages:"N/A",no_of_records:"N/A",last_ts:"N/A",data_count:"N/A",message:msg});
+          continue;
+        }
+        const dd = d.Data || {};
+        const cp = dd.CurrentPage ?? "?";
+        const np = dd.NoOfPages ?? "?";
+        const nr = dd.NoOfRecords ?? "?";
+        const ts = dd.LastAccessedTimeStamp ?? "?";
+        const pd = dd.data || [];
+        const dc = Array.isArray(pd) ? pd.length : "?";
+        log("  " + mn.padEnd(30) + " SUCCESS  CurrPage:" + cp + "  Pages:" + np + "  Records:" + nr + "  Data:" + dc, "ok");
+        s4Rows.push({model:mn,module:mod,status:"SUCCESS",current_page:cp,no_of_pages:np,no_of_records:nr,last_ts:ts,data_count:dc,message:""});
+      } catch(e){
+        log("  " + mn.padEnd(30) + " ERROR", "err");
+        s4Rows.push({model:mn,module:mod,status:"ERROR",current_page:"N/A",no_of_pages:"N/A",no_of_records:"N/A",last_ts:"N/A",data_count:"N/A",message:e.message});
+      }
+    }
+  }
+
+  log("\n═══ MASTER DATA VALIDATION COMPLETE ═══", "ok");
+
+  // ── Build result HTML ──
+  let html = "";
+
+  // Step 2 card: API list
+  html += '<div class="card"><div class="card-head"><span class="step">2</span> MasterApiList — Available Models</div><div class="card-body">';
+  html += '<div class="stats">';
+  html += '<div class="stat stat-teal"><small>Total Models</small>' + apiList.length + '</div>';
+  html += '<div class="stat stat-navy"><small>Batch = true</small>' + batchTrue.length + '</div>';
+  html += '<div class="stat stat-green"><small>Batch = false</small>' + batchFalse.length + '</div>';
+  html += '</div>';
+  html += '<div class="tbl-wrap"><table class="res"><tr><th>#</th><th>ModelName</th><th>BatchProcessing</th><th>Module</th></tr>';
+  apiList.forEach((m, i) => {
+    html += '<tr><td>'+(i+1)+'</td><td>'+esc(m.ModelName||"")+'</td><td>'+m.BatchProcessing+'</td><td>'+esc(m.Module||"")+'</td></tr>';
+  });
+  html += '</table></div></div></div>';
+
+  // Step 3 card: non-batch
+  html += '<div class="card"><div class="card-head"><span class="step">3</span> getMasterData — Non-Batch Models (BatchProcessing = false)</div><div class="card-body">';
+  if(!s3Rows.length){
+    html += '<p style="color:var(--text-muted)">No non-batch models found.</p>';
+  } else {
+    html += '<div class="tbl-wrap"><table class="res"><tr><th>#</th><th>Model</th><th>Module</th><th>Status</th><th>Records</th><th>Remarks</th></tr>';
+    s3Rows.forEach((r, i) => {
+      html += '<tr><td>'+(i+1)+'</td><td>'+esc(r.model)+'</td><td>'+esc(r.module)+'</td><td>'+statusHtml(r.status)+'</td><td>'+r.count+'</td><td>'+esc(r.message)+'</td></tr>';
+    });
+    html += '</table></div>';
+  }
+  html += '</div></div>';
+
+  // Step 4 card: batch
+  html += '<div class="card"><div class="card-head"><span class="step">4</span> getMasterBatchData — Batch Models (Page 1)</div><div class="card-body">';
+  if(!s4Rows.length){
+    html += '<p style="color:var(--text-muted)">No batch models found.</p>';
+  } else {
+    html += '<div class="tbl-wrap"><table class="res"><tr><th>#</th><th>Model</th><th>Module</th><th>Status</th><th>CurrPage</th><th>NoOfPages</th><th>NoOfRecords</th><th>LastAccessedTimeStamp</th><th>DataCount</th><th>Remarks</th></tr>';
+    s4Rows.forEach((r, i) => {
+      html += '<tr><td>'+(i+1)+'</td><td>'+esc(r.model)+'</td><td>'+esc(r.module)+'</td><td>'+statusHtml(r.status)+'</td><td>'+r.current_page+'</td><td>'+r.no_of_pages+'</td><td>'+r.no_of_records+'</td><td>'+esc(String(r.last_ts))+'</td><td>'+r.data_count+'</td><td>'+esc(r.message)+'</td></tr>';
+    });
+    html += '</table></div>';
+  }
+  html += '</div></div>';
+
+  $("results").innerHTML = html;
+  setBtn(btn, false, "Run Validation");
+}
+
+function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+</script>
+</body>
+</html>
