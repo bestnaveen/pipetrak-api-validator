@@ -102,10 +102,42 @@
 
 <div class="header">
   <h1>PipeTrakIt API Validator</h1>
-  <span class="badge">v2.0</span>
+  <span class="badge">v2.1</span>
 </div>
 
 <div class="container">
+
+  <!-- ═══ OPERATION MODE ═══ -->
+  <div class="card" id="modeCard">
+    <div class="card-head"><span class="step">0</span> Select Operation</div>
+    <div class="card-body">
+      <div class="pill-group">
+        <input type="radio" name="opMode" id="mConfig" value="config">
+        <label class="pill" for="mConfig">Check Project Configuration</label>
+        <input type="radio" name="opMode" id="mApi" value="api" checked>
+        <label class="pill" for="mApi">Check Project APIs (Master/Meta)</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ CONFIG CHECK ═══ -->
+  <div class="card hidden" id="configCard">
+    <div class="card-head"><span class="step">C</span> Check Project Configuration</div>
+    <div class="card-body">
+      <div class="form-group full">
+        <label>Project Code</label>
+        <input type="text" id="projCode" placeholder="e.g. qaakkngp" autocomplete="off">
+      </div>
+      <div class="form-group full hidden" id="pasteWrap">
+        <label>Config JSON — paste here if the fetch is blocked by CORS</label>
+        <textarea id="configPaste" rows="6" placeholder="Open the config URL below, copy the whole JSON, paste it here, then click Check Configuration again." style="padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);font-family:monospace;font-size:12px;resize:vertical;color:var(--text);background:#fff"></textarea>
+        <a id="cfgLink" href="https://mobility.pipetrakit.com/PTITResource/mconfig/mconfig.js" target="_blank" rel="noopener" style="font-size:11px;color:var(--teal);margin-top:4px;display:inline-block">Open config URL ↗</a>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnConfig" onclick="checkConfig()">Check Configuration</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ═══ CONFIG & LOGIN ═══ -->
   <div class="card" id="loginCard">
@@ -180,12 +212,127 @@ const URLS = {
   PROD: { OLD:"https://mobility.pipetrakit.com",     CORE:"https://mobilitycore.pipetrakit.com",     PTCORE:"https://mobilityptcore.pipetrakit.com" }
 };
 
-let BASE = "", TOKEN = "";
+const CONFIG_URL = "https://mobility.pipetrakit.com/PTITResource/mconfig/mconfig.js";
+const CATALOG_ACTIVITY_KEYS = ["ActivityId","activityId","ActivityID","CatalogActivityId","catalogActivityId"];
+
+let BASE = "", TOKEN = "", MENUS = [];
 
 // ── Helpers ──
 function $(id){ return document.getElementById(id) }
 function show(id){ $(id).classList.remove("hidden") }
 function hide(id){ $(id).classList.add("hidden") }
+
+// ── Operation mode toggle: Configuration vs API check ──
+document.querySelectorAll('input[name=opMode]').forEach(r => r.addEventListener("change", setMode));
+function setMode(){
+  const m = document.querySelector('input[name=opMode]:checked').value;
+  $("results").innerHTML = "";
+  if(m === "config"){
+    show("configCard"); hide("loginCard"); hide("choiceCard"); hide("logCard");
+  } else {
+    show("loginCard"); hide("configCard");
+  }
+}
+
+// ── Menu / catalog helpers (mirror the Python validator) ──
+function normId(v){
+  return (v === null || v === undefined || String(v).trim() === "") ? null : String(v).trim();
+}
+function collectMenuActivities(hier){
+  // Flatten Hierarchical menus -> [{menu, activityid, header}], including header-level ActivityId.
+  const acts = [];
+  (hier || []).forEach(grp => {
+    const header = grp.Header || "";
+    const hid = normId(grp.ActivityId);
+    if(hid) acts.push({ menu: header, activityid: hid, header });
+    (grp.MenuItems || []).forEach(it => {
+      const aid = normId(it.ActivityId);
+      if(aid) acts.push({ menu: it.MenuName || "", activityid: aid, header });
+    });
+  });
+  return acts;
+}
+function collectCatalogIds(catalogs){
+  const ids = new Set();
+  (catalogs || []).forEach(c => {
+    if(c && typeof c === "object"){
+      for(const k of CATALOG_ACTIVITY_KEYS){
+        if(k in c && normId(c[k])){ ids.add(normId(c[k])); break; }
+      }
+    }
+  });
+  return ids;
+}
+
+// ══════════════════════════════════════
+// OPTION 1: Check Project Configuration
+// ══════════════════════════════════════
+async function checkConfig(){
+  const btn = $("btnConfig");
+  const pc = $("projCode").value.trim();
+  clearLog(); show("logCard"); $("results").innerHTML = "";
+  if(!pc){ log("Project Code required.", "err"); return; }
+
+  setBtn(btn, true, "Checking…");
+  let cfg = null;
+
+  // 1) If the user pasted config JSON (CORS fallback), use it.
+  const pasted = $("configPaste").value.trim();
+  if(pasted){
+    try { cfg = JSON.parse(pasted); log("Using pasted config JSON.", "info"); }
+    catch(e){ log("Pasted config is not valid JSON: " + e.message, "err"); setBtn(btn, false, "Check Configuration"); return; }
+  } else {
+    // 2) Otherwise try to fetch it live.
+    log("Fetching config: " + CONFIG_URL, "info");
+    try {
+      const r = await fetch(CONFIG_URL, { method: "GET", headers: { "Accept": "*/*" } });
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      cfg = JSON.parse(await r.text());  // served as .js but body is JSON
+    } catch(e){
+      log("CONFIG FETCH FAILED: " + e.message, "err");
+      log("This is a browser CORS block on the static config file (server-side scripts are unaffected).", "warn");
+      log("Fix: click 'Open config URL', copy the JSON, paste it in the box, then click again.", "warn");
+      show("pasteWrap");
+      setBtn(btn, false, "Check Configuration");
+      return;
+    }
+  }
+
+  // 3) Search all config blocks for the project code and render.
+  const matches = [];
+  Object.keys(cfg).forEach(envKey => {
+    const block = cfg[envKey];
+    if(block && typeof block === "object" && pc in block) matches.push({ envKey, url: block[pc] });
+  });
+
+  if(!matches.length){
+    log("Project code not found in any configuration: " + pc, "err");
+    let html = '<div class="card"><div class="card-head"><span class="step">C</span> Configuration — Not Found</div><div class="card-body">';
+    html += '<p style="color:var(--red);font-weight:600;margin-bottom:10px">Project code "'+esc(pc)+'" not found in any configuration.</p>';
+    html += '<div class="tbl-wrap"><table class="res"><tr><th>Config</th><th>Available Project Code</th><th>Base URL</th></tr>';
+    Object.keys(cfg).forEach(envKey => {
+      const block = cfg[envKey];
+      if(block && typeof block === "object"){
+        Object.keys(block).forEach(k => {
+          html += '<tr><td>'+esc(envKey)+'</td><td>'+esc(k)+'</td><td>'+esc(String(block[k]))+'</td></tr>';
+          log("  ["+envKey+"] "+k, "dim");
+        });
+      }
+    });
+    html += '</table></div></div></div>';
+    $("results").innerHTML = html;
+  } else {
+    matches.forEach(m => log("ProjectCode: "+pc+"  |  Config: "+m.envKey+"  |  Base URL: "+m.url, "ok"));
+    let html = '<div class="card"><div class="card-head"><span class="step">C</span> Project Configuration</div><div class="card-body">';
+    html += '<div class="tbl-wrap"><table class="res"><tr><th>Project Code</th><th>Config</th><th>Base URL</th></tr>';
+    matches.forEach(m => {
+      html += '<tr><td>'+esc(pc)+'</td><td>'+esc(m.envKey)+'</td><td><span class="base-url">'+esc(String(m.url))+'</span></td></tr>';
+    });
+    html += '</table></div></div></div>';
+    $("results").innerHTML = html;
+  }
+  setBtn(btn, false, "Check Configuration");
+}
 
 const logBox = $("logBox");
 function log(msg, cls=""){
@@ -279,8 +426,10 @@ async function doLogin(){
     }
 
     TOKEN = auth.Data.UserToken;
+    MENUS = auth.Data.Hierarchical || [];
     log("Login Successful  ✓", "ok");
     log("UserToken: " + TOKEN, "dim");
+    log("Menus captured: " + collectMenuActivities(MENUS).length + " activity(ies) across " + MENUS.length + " group(s)", "dim");
     show("choiceCard");
   } catch(e){
     log("LOGIN ERROR: " + e.message, "err");
@@ -333,6 +482,21 @@ async function runMetadata(btn){
     log("Catalogs: " + cat);
     log(match ? "META DATA API RECORDS LOOK GOOD  ✓" : "META DATA RECORD COUNT MISMATCH  ✗", match ? "ok" : "err");
 
+    // ── Catalog (menu activity) availability cross-check ──
+    const menuActs = collectMenuActivities(MENUS);
+    const catIds   = collectCatalogIds(d.Catalogs || []);
+    let avail = 0, miss = 0;
+    menuActs.forEach(a => { a.ok = catIds.has(a.activityid); a.ok ? avail++ : miss++; });
+    const menuIds = new Set(menuActs.map(a => a.activityid));
+    const missingIds = menuActs.filter(a => !a.ok).map(a => a.activityid);
+    const extraIds   = [...catIds].filter(x => !menuIds.has(x)).sort();
+
+    log("\n═══ Catalog Activity Availability ═══", "info");
+    menuActs.forEach(a => log("  " + a.menu.padEnd(35) + a.activityid.padEnd(12) + (a.ok ? "YES" : "NO"), a.ok ? "ok" : "err"));
+    log("  Total: " + menuActs.length + "  |  Available: " + avail + "  |  Missing: " + miss);
+    if(missingIds.length) log("  Missing catalog activityids (in menus, not in metadata): " + missingIds.join(", "), "err");
+    if(extraIds.length)   log("  Extra catalog activityids (in metadata, not in menus): " + extraIds.join(", "), "warn");
+
     // Build result card
     let html = '<div class="card"><div class="card-head"><span class="step">R</span> Metadata Report</div><div class="card-body">';
     html += '<div class="stats">';
@@ -343,6 +507,27 @@ async function runMetadata(btn){
     html += '</div>';
     html += '<div class="btn-row"><button class="btn btn-outline" onclick=\'downloadJSON(__metaPayload,"getMetaData.json")\'>Download getMetaData.json</button></div>';
     html += '</div></div>';
+
+    // Catalog Activity Availability card
+    html += '<div class="card"><div class="card-head"><span class="step">R</span> Catalog Activity Availability (Menu vs Metadata)</div><div class="card-body">';
+    html += '<div class="stats">';
+    html += '<div class="stat stat-teal"><small>Menu Activities</small>' + menuActs.length + '</div>';
+    html += '<div class="stat stat-green"><small>Available</small>' + avail + '</div>';
+    html += '<div class="stat ' + (miss ? 'stat-red' : 'stat-navy') + '"><small>Missing</small>' + miss + '</div>';
+    html += '</div>';
+    if(!menuActs.length){
+      html += '<p style="color:var(--text-muted)">No menu activities captured from login response.</p>';
+    } else {
+      html += '<div class="tbl-wrap"><table class="res"><tr><th>#</th><th>MenuName</th><th>ActivityId</th><th>Header</th><th>Available in Metadata</th></tr>';
+      menuActs.forEach((a, i) => {
+        html += '<tr><td>'+(i+1)+'</td><td>'+esc(a.menu)+'</td><td>'+esc(a.activityid)+'</td><td>'+esc(a.header)+'</td><td>'+(a.ok?'<span class="st-ok">YES</span>':'<span class="st-fail">NO</span>')+'</td></tr>';
+      });
+      html += '</table></div>';
+    }
+    if(missingIds.length) html += '<p class="mt" style="color:var(--red);font-size:12px">Missing (in menus, not in metadata): '+esc(missingIds.join(", "))+'</p>';
+    if(extraIds.length)   html += '<p style="color:var(--orange);font-size:12px">Extra (in metadata, not in menus): '+esc(extraIds.join(", "))+'</p>';
+    html += '</div></div>';
+
     $("results").innerHTML = html;
 
     window.__metaPayload = meta;
