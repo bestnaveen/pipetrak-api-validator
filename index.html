@@ -91,6 +91,15 @@
   .progress-bar .fill{height:100%;background:var(--teal);transition:width .3s;width:0%}
   .mt{margin-top:14px}
 
+  /* ── Modal ── */
+  .modal-overlay{position:fixed;inset:0;background:rgba(13,43,85,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+  .modal-box{background:#fff;border-radius:var(--radius);width:100%;max-width:520px;box-shadow:0 8px 30px rgba(0,0,0,.25);overflow:hidden;max-height:90vh;display:flex;flex-direction:column}
+  .modal-head{background:var(--navy);color:#fff;padding:14px 18px;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .modal-close{cursor:pointer;font-size:20px;line-height:1;opacity:.85}
+  .modal-close:hover{opacity:1}
+  .modal-body{padding:18px;overflow-y:auto}
+  input[readonly]{background:var(--row-alt);color:var(--text-sec)}
+
   @media(max-width:640px){
     .form-grid{grid-template-columns:1fr}
     .stats{flex-direction:column}
@@ -185,6 +194,18 @@
         <label class="pill" for="rMeta">Metadata (Form Configuration)</label>
         <input type="radio" name="apiCall" id="rMaster" value="master">
         <label class="pill" for="rMaster">Master Data</label>
+        <input type="radio" name="apiCall" id="rSync" value="sync">
+        <label class="pill" for="rSync">Report Sync With Images</label>
+      </div>
+      <div class="form-grid mt hidden" id="syncInputs">
+        <div class="form-group">
+          <label>Request Id</label>
+          <input type="text" id="syncRequestId" placeholder="e.g. 100303496200000044" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Response Id</label>
+          <input type="text" id="syncResponseId" placeholder="e.g. 19099" autocomplete="off">
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" id="btnRun" onclick="runValidation()">Run Validation</button>
@@ -205,6 +226,52 @@
 
 </div>
 
+<!-- ═══ UPLOAD IMAGE MODAL ═══ -->
+<div class="modal-overlay hidden" id="uploadModalOverlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      Upload Image
+      <span class="modal-close" onclick="closeUploadModal()">&times;</span>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Project Id</label>
+          <input type="text" id="upProjectId" readonly>
+        </div>
+        <div class="form-group">
+          <label>Document Category</label>
+          <select id="upDocCategory">
+            <option value="ACTIVITYPROGRESS">ACTIVITYPROGRESS</option>
+            <option value="DISPATCHRECEIPT">DISPATCHRECEIPT</option>
+            <option value="DAMAGERECEIPT">DAMAGERECEIPT</option>
+            <option value="ACTIVITYDETAILMULTIDOCUMENT" selected>ACTIVITYDETAILMULTIDOCUMENT</option>
+            <option value="JOINT$DUGHOUSE">JOINT$DUGHOUSE</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Activity Id</label>
+          <input type="text" id="upActivityId" readonly>
+        </div>
+        <div class="form-group">
+          <label>Class Audit Id</label>
+          <input type="text" id="upClassAuditId" readonly>
+        </div>
+        <div class="form-group full">
+          <label>File (image or PDF)</label>
+          <input type="file" id="upFileInput" accept="image/*,.pdf" onchange="handleUploadFileSelect(this)">
+          <div id="upFileName" style="font-size:12px;color:var(--text-sec);margin-top:4px"></div>
+        </div>
+      </div>
+      <div id="upResultMsg" class="mt"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnSyncImage" onclick="syncImage()">Sync Image</button>
+        <button class="btn btn-outline" onclick="closeUploadModal()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const URLS = {
   QA:   { OLD:"https://qamobility.pipetrakit.com",  CORE:"https://qamobilitycore.pipetrakit.com",  PTCORE:"https://qamobilityptcore.pipetrakit.com" },
@@ -215,7 +282,7 @@ const URLS = {
 const CONFIG_URL = "https://mobility.pipetrakit.com/PTITResource/mconfig/mconfig.js";
 const CATALOG_ACTIVITY_KEYS = ["ActivityId","activityId","ActivityID","CatalogActivityId","catalogActivityId"];
 
-let BASE = "", TOKEN = "", MENUS = [];
+let BASE = "", TOKEN = "", MENUS = [], PROJECT_ID = "";
 
 // ── Helpers ──
 function $(id){ return document.getElementById(id) }
@@ -232,6 +299,13 @@ function setMode(){
   } else {
     show("loginCard"); hide("configCard");
   }
+}
+
+// ── API choice toggle: show RequestId/ResponseId inputs only for Report Sync With Images ──
+document.querySelectorAll('input[name=apiCall]').forEach(r => r.addEventListener("change", toggleSyncInputs));
+function toggleSyncInputs(){
+  const choice = document.querySelector('input[name=apiCall]:checked').value;
+  if(choice === "sync") show("syncInputs"); else hide("syncInputs");
 }
 
 // ── Menu / catalog helpers (mirror the Python validator) ──
@@ -358,14 +432,24 @@ function showBaseUrl(){
 }
 showBaseUrl();
 
+// RequestId/ResponseId/ProjectId/ClassAuditId etc. from these APIs can exceed
+// JS's safe integer range (2^53), so a plain JSON.parse would silently round
+// them. Quote any bare integer literal of 16+ digits before parsing so it
+// survives intact as a string.
+function safeJsonParse(text){
+  const fixed = text.replace(/([:\[,]\s*)(-?\d{16,})(\s*[,\]}])/g, '$1"$2"$3');
+  return JSON.parse(fixed);
+}
+
 async function post(url, payload){
   const r = await fetch(url, {
     method: "POST",
     headers: { "Accept":"*/*", "Content-Type":"application/json-patch+json" },
     body: JSON.stringify(payload)
   });
+  const text = await r.text();
   if(!r.ok) throw new Error("HTTP " + r.status);
-  return r.json();
+  return safeJsonParse(text);
 }
 
 function statusHtml(s){
@@ -427,8 +511,11 @@ async function doLogin(){
 
     TOKEN = auth.Data.UserToken;
     MENUS = auth.Data.Hierarchical || [];
+    const proj = (auth.Data.Project || [])[0];
+    PROJECT_ID = proj ? proj.ProjectId : "";
     log("Login Successful  ✓", "ok");
     log("UserToken: " + TOKEN, "dim");
+    if(proj) log("ProjectId: " + PROJECT_ID + "  |  Project: " + (proj.Name || ""), "dim");
     log("Menus captured: " + collectMenuActivities(MENUS).length + " activity(ies) across " + MENUS.length + " group(s)", "dim");
     show("choiceCard");
   } catch(e){
@@ -446,7 +533,8 @@ async function runValidation(){
   $("results").innerHTML = "";
 
   if(choice === "meta") await runMetadata(btn);
-  else await runMasterData(btn);
+  else if(choice === "master") await runMasterData(btn);
+  else await runReportSync(btn);
 }
 
 // ── OPTION 1: Metadata ──
@@ -697,6 +785,227 @@ async function runMasterData(btn){
 
   $("results").innerHTML = html;
   setBtn(btn, false, "Run Validation");
+}
+
+// ══════════════════════════════════════
+// OPTION 3: Report Sync With Images
+// ══════════════════════════════════════
+
+async function postRaw(url, bodyStr){
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Accept":"*/*", "Content-Type":"application/json-patch+json" },
+    body: bodyStr
+  });
+  const text = await r.text();
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return safeJsonParse(text);
+}
+
+async function runReportSync(btn){
+  clearLog(); show("logCard"); $("results").innerHTML = "";
+  setBtn(btn, true, "Checking Sync Status…");
+
+  const reqId  = $("syncRequestId").value.trim();
+  const respId = $("syncResponseId").value.trim();
+
+  if(!/^\d+$/.test(reqId) || !/^\d+$/.test(respId)){
+    log("RequestId and ResponseId are required and must be numeric.", "err");
+    setBtn(btn, false, "Run Validation");
+    return;
+  }
+
+  log("\n═══ Report Sync With Images ═══", "info");
+  log("RequestId: " + reqId + "  |  ResponseId: " + respId, "info");
+
+  // Build the body manually (not via JSON.stringify/an object) so the large
+  // RequestId/ResponseId digits aren't rounded by JS number precision limits.
+  const bodyStr = '{"UserToken":' + JSON.stringify(TOKEN) +
+    ',"Data":[{"RequestId":' + reqId + ',"ResponseId":' + respId + '}]}';
+
+  let resp;
+  try {
+    resp = await postRaw(BASE + "/api/DataSync/getSyncedDataStatus", bodyStr);
+  } catch(e){
+    log("REQUEST ERROR: " + e.message, "err");
+    setBtn(btn, false, "Run Validation");
+    return;
+  }
+
+  const st = resp.Status || {};
+  const mc = st.MessageCode;
+  const mv = (st.MessageList || [{}])[0].MessageValue || "Unknown error";
+
+  // Step 4: API call failed (MessageCode != 1200) — show the message returned by the API.
+  if(mc !== 1200){
+    log("SYNC STATUS API FAILED: " + mv, "err");
+    let html = '<div class="card"><div class="card-head"><span class="step">R</span> Report Sync With Images</div><div class="card-body">';
+    html += '<p style="color:var(--red);font-weight:600">' + esc(mv) + '</p>';
+    html += '</div></div>';
+    $("results").innerHTML = html;
+    setBtn(btn, false, "Run Validation");
+    return;
+  }
+
+  // Step 5: success, but Data is null/empty — sync hasn't produced a result yet.
+  const dataArr = resp.Data;
+  if(!Array.isArray(dataArr) || !dataArr.length){
+    log("Sync Still in progress, wait for sometime.", "warn");
+    let html = '<div class="card"><div class="card-head"><span class="step">R</span> Report Sync With Images</div><div class="card-body">';
+    html += '<p style="color:var(--orange);font-weight:600">Sync Still in progress, wait for sometime.</p>';
+    html += '</div></div>';
+    $("results").innerHTML = html;
+    setBtn(btn, false, "Run Validation");
+    return;
+  }
+
+  // Step 3: success with data — flatten ImageList across all Data entries into grid rows.
+  const rows = [];
+  dataArr.forEach(d => {
+    (d.ImageList || []).forEach(img => {
+      rows.push({
+        refDetailId: img.RefDetailId,
+        orgDetailId: img.OrgDetailId,
+        activityId: img.ActivityId
+      });
+    });
+  });
+
+  log("[SUCCESS] Sync status retrieved. Image record(s): " + rows.length, "ok");
+  rows.forEach(r => log("  RefDetailId:" + r.refDetailId + "  OrgDetailId:" + r.orgDetailId + "  ActivityId:" + r.activityId, "dim"));
+
+  let html = '<div class="card"><div class="card-head"><span class="step">R</span> Report Sync With Images</div><div class="card-body">';
+
+  if(!rows.length){
+    // Data came back but no images yet — treat the same as still-in-progress.
+    html += '<p style="color:var(--orange);font-weight:600">Sync Still in progress, wait for sometime.</p>';
+  } else {
+    html += '<div class="tbl-wrap"><table class="res"><tr><th>#</th><th>RefDetailId</th><th>OrgDetailId</th><th>ActivityId</th><th>Action</th></tr>';
+    rows.forEach((r, i) => {
+      const rid = esc(String(r.refDetailId)), oid = esc(String(r.orgDetailId)), aid = esc(String(r.activityId));
+      html += '<tr><td>'+(i+1)+'</td><td>'+rid+'</td><td>'+oid+'</td><td>'+aid+'</td>'
+            + '<td><button class="btn btn-outline" style="padding:5px 14px" onclick=\'uploadImage("'+rid+'","'+oid+'","'+aid+'", this)\'>Upload Image</button></td></tr>';
+    });
+    html += '</table></div>';
+  }
+  html += '</div></div>';
+
+  $("results").innerHTML = html;
+  setBtn(btn, false, "Run Validation");
+}
+
+// ══════════════════════════════════════
+// UPLOAD IMAGE MODAL
+// ══════════════════════════════════════
+let upBtnEl = null;      // the grid row's "Upload Image" button, so we can update it on success
+let upFileName = "";
+let upFileImageB64 = ""; // raw base64, no "data:...;base64," prefix
+
+function uploadImage(refDetailId, orgDetailId, activityId, btnEl){
+  upBtnEl = btnEl || null;
+  upFileName = "";
+  upFileImageB64 = "";
+
+  $("upProjectId").value = PROJECT_ID || "(not set — login first)";
+  $("upActivityId").value = activityId;
+  $("upClassAuditId").value = orgDetailId; // classAuditId comes from the grid row's OrgDetailId
+  $("upDocCategory").value = "ACTIVITYDETAILMULTIDOCUMENT";
+  $("upFileInput").value = "";
+  $("upFileName").textContent = "";
+  $("upResultMsg").innerHTML = "";
+  setBtn($("btnSyncImage"), false, "Sync Image");
+
+  show("uploadModalOverlay");
+}
+
+function closeUploadModal(){
+  hide("uploadModalOverlay");
+}
+
+function handleUploadFileSelect(input){
+  const file = input.files && input.files[0];
+  if(!file){ upFileName = ""; upFileImageB64 = ""; $("upFileName").textContent = ""; return; }
+
+  upFileName = file.name;
+  $("upFileName").textContent = file.name;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    // reader.result looks like "data:image/jpeg;base64,/9j/4AAQ..." — strip the prefix.
+    const result = reader.result || "";
+    const commaIdx = result.indexOf(",");
+    upFileImageB64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
+  };
+  reader.onerror = () => {
+    upFileImageB64 = "";
+    $("upResultMsg").innerHTML = '<p style="color:var(--red);font-weight:600">Could not read the selected file.</p>';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function syncImage(){
+  const btn = $("btnSyncImage");
+  $("upResultMsg").innerHTML = "";
+
+  const activityId    = $("upActivityId").value.trim();
+  const classAuditId  = $("upClassAuditId").value.trim();
+  const documentCategory = $("upDocCategory").value;
+
+  if(!TOKEN){
+    $("upResultMsg").innerHTML = '<p style="color:var(--red);font-weight:600">Not logged in — no UserToken available.</p>';
+    return;
+  }
+  if(!PROJECT_ID){
+    $("upResultMsg").innerHTML = '<p style="color:var(--red);font-weight:600">ProjectId not available — please login again.</p>';
+    return;
+  }
+  if(!upFileName || !upFileImageB64){
+    $("upResultMsg").innerHTML = '<p style="color:var(--red);font-weight:600">Please choose a file first.</p>';
+    return;
+  }
+
+  setBtn(btn, true, "Syncing…");
+
+  // classAuditId / projectId / activityId are embedded as raw numeric literals (not
+  // run through JSON.stringify/Number) so large IDs keep full precision — same
+  // approach used for RequestId/ResponseId above.
+  const bodyStr = '{"userToken":' + JSON.stringify(TOKEN) +
+    ',"data":{"classAuditId":' + classAuditId +
+    ',"projectId":' + PROJECT_ID +
+    ',"fileName":' + JSON.stringify(upFileName) +
+    ',"fileImage":' + JSON.stringify(upFileImageB64) +
+    ',"documentCategory":' + JSON.stringify(documentCategory) +
+    ',"activityId":' + activityId + '}}';
+
+  const env = $("env").value;
+  const syncUrl = URLS[env].PTCORE + "/api/Image/syncImage";
+
+  let resp;
+  try {
+    resp = await postRaw(syncUrl, bodyStr);
+  } catch(e){
+    $("upResultMsg").innerHTML = '<p style="color:var(--red);font-weight:600">' + esc(e.message) + '</p>';
+    setBtn(btn, false, "Sync Image");
+    return;
+  }
+
+  const st = resp.Status || {};
+  const mc = st.MessageCode;
+  const mv = (st.MessageList || [{}])[0].MessageValue || "Unknown error";
+
+  if(mc === 1200 && resp.Data && resp.Data.Key !== undefined && resp.Data.Value !== undefined){
+    const key = resp.Data.Key, val = resp.Data.Value;
+    $("upResultMsg").innerHTML = '<p style="color:var(--green);font-weight:600">Image with ID - '
+      + esc(String(key)) + ' - ' + esc(String(val)) + ' synced successfully...!</p>';
+    if(upBtnEl){
+      upBtnEl.disabled = true;
+      upBtnEl.textContent = "Synced";
+    }
+  } else {
+    $("upResultMsg").innerHTML = '<p style="color:var(--red);font-weight:600">' + esc(mv) + '</p>';
+  }
+
+  setBtn(btn, false, "Sync Image");
 }
 
 function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
