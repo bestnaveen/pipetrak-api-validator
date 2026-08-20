@@ -444,7 +444,7 @@ function safeJsonParse(text){
 async function post(url, payload){
   const r = await fetch(url, {
     method: "POST",
-    headers: { "Accept":"*/*", "Content-Type":"application/json-patch+json" },
+    headers: { "Accept":"*/*", "Content-Type":"application/json" },
     body: JSON.stringify(payload)
   });
   const text = await r.text();
@@ -794,7 +794,7 @@ async function runMasterData(btn){
 async function postRaw(url, bodyStr){
   const r = await fetch(url, {
     method: "POST",
-    headers: { "Accept":"*/*", "Content-Type":"application/json-patch+json" },
+    headers: { "Accept":"*/*", "Content-Type":"application/json" },
     body: bodyStr
   });
   const text = await r.text();
